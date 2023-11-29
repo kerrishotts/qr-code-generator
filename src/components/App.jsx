@@ -5,21 +5,31 @@ import "@spectrum-web-components/theme/express/theme-light.js";
 import "@spectrum-web-components/theme/scale-medium.js";
 import "@spectrum-web-components/theme/theme-light.js";
 
+import React, { useState, useRef, useEffect, useContext } from "react";
+import {useDebounce, useDebounceCallback} from "@react-hook/debounce";
+
+
 // To learn more about using "swc-react" visit:
 // https://opensource.adobe.com/spectrum-web-components/using-swc-react/
 import { Button } from "@swc-react/button";
 import { Textfield } from "@swc-react/textfield";
+import { FieldGroup } from "@swc-react/field-group";
 import { FieldLabel } from "@swc-react/field-label";
 import { NumberField } from "@swc-react/number-field";
 import { Radio, RadioGroup } from '@swc-react/radio';
+import { Picker } from "@swc-react/picker";
+import { MenuItem } from "@swc-react/menu";
 import { Checkbox } from '@swc-react/checkbox';
 import { Accordion, AccordionItem } from "@swc-react/accordion";
 import { Link } from "@swc-react/link";
 import { HelpText } from "@swc-react/help-text";
-import { Theme } from "@swc-react/theme";
 import { WC } from "./WC";
 
-import React, { useState, useRef, useEffect } from "react";
+import { AdaptiveTheme } from "./AdaptiveTheme.jsx";
+import { AddOnUiSdkContext } from "../contexts/AddOnUiSdkContext.jsx";
+import { ColorPicker } from "./ColorPicker.jsx";
+
+import { dataTypes, dataTypeKeys } from "../datatypes/index.js";
 
 import "./App.css";
 
@@ -31,40 +41,55 @@ const qrCode = new QRCodeStyling({
     height: 1200,
 });
 
-const App = ({ addOnUISdk }) => {
-    const [data, setData] = useState("https://www.example.com");
-    const [addToPageEnabled, setAddToPageEnabled] = useState(true);
-    const [marginWidth, setMarginWidth] = useState(5);
-    const [dataType, setDataType] = useState("url");
-    const [transparent, setTransparent] = useState("no");
-    const [size, setSize] = useState(1200);
+
+const App = () => {
+    const AddOnUiSdk = useContext(AddOnUiSdkContext);
+
+    const [qrConfig, setQrConfig] = useState({
+        dataType: dataTypeKeys[0],
+        data: dataTypes[dataTypeKeys[0]].example,
+        marginWidth: 5,
+        transparent: "no",
+        size: 1200,
+        color: "#000000",
+        backgroundColor: "#FFFFFF"
+    });
+
+    const [debouncedQrConfig, setDebouncedQrConfig] = useDebounce(qrConfig);
+
+    const selectedDataType = dataTypes[qrConfig.dataType]
+
+    const [addToPageEnabled, setAddToPageEnabled] = useState(false);
     const previewRef = useRef();
 
-    let debounceTimer;
-
     function isDataValid() {
-        if (dataType === "url") {
-            return /((([A-Za-z]{3,9}:(?:\/\/)?)(?:[\-;:&=\+\$,\w]+@)?[A-Za-z0-9\.\-]+|(?:www\.|[\-;:&=\+\$,\w]+@)[A-Za-z0-9\.\-]+)((?:\/[\+~%\/\.\w\-_]*)?\??(?:[\-\+=&;%@\.\w_]*)#?(?:[\.\!\/\\\w]*))?)/.test(data)
-        } else {
-            return data.length > 0;
-        }
+        return selectedDataType.valid(qrConfig.data);
     }
 
     useEffect(() => {
-        qrCode.append(previewRef.current);
-        debounceTimer = setTimeout(() => {
+            qrCode.append(previewRef.current);
+    }, []);
+
+    useEffect(() => {
+        const valid = (isDataValid() && qrConfig.size >= 33 && qrConfig.marginWidth >= 0);
+        if (valid) {
             qrCode.update({
-                data,
-                margin: size * (marginWidth/100),
-                backgroundOptions: {
-                    color: transparent === "yes" ? "transparent" : "#ffffff",
+                data:selectedDataType.normalize(qrConfig.data),
+                margin: qrConfig.size * (qrConfig.marginWidth/100),
+                dotsOptions: {
+                    color: qrConfig.color,
+                    type: "square"
                 },
-                width: size,
-                height: size,
+                backgroundOptions: {
+                    color: qrConfig.backgroundColor
+                },
+                width: qrConfig.size,
+                height: qrConfig.size,
             });
-            setAddToPageEnabled(isDataValid() && size >= 33 && marginWidth >= 0);
-        }, 100);
-    }, [data, marginWidth,dataType, transparent, size]);
+        }
+        setAddToPageEnabled(valid);
+    }, [debouncedQrConfig]);
+    //}, [qrConfig.data, qrConfig.marginWidth, qrConfig.dataType, qrConfig.transparent, qrConfig.size, qrConfig.color, qrConfig.backgroundColor]);
 
 
     async function handleClick() {
@@ -72,105 +97,124 @@ const App = ({ addOnUISdk }) => {
         const blob = await new Promise((resolve, reject) => {
             canvas.toBlob(blob => { resolve(blob); })
         })
-        addOnUISdk.app.document.addImage(blob);
+        AddOnUiSdk.app.document.addImage(blob);
+    }
+
+    function setQrConfigAndUpdate(config) {
+        setAddToPageEnabled(false); 
+        setQrConfig(config);
+        setDebouncedQrConfig(config);
     }
 
     function dataChanged(event) {
-        setData(event.target.value);
-        if (debounceTimer) { clearTimeout(debounceTimer); }
-        setAddToPageEnabled(false); 
+        const newConfig = {...qrConfig, data: event.target.value};
+        setQrConfigAndUpdate({...qrConfig, data: event.target.value});
     }
 
     function marginChanged(event) {
-        setMarginWidth(event.target.value);
-        if (debounceTimer) { clearTimeout(debounceTimer); }
-        setAddToPageEnabled(false); 
+        setQrConfigAndUpdate({...qrConfig, marginWidth: event.target.value});
     }
 
     function dataTypeChanged(event) {
-        setDataType(event.target.selected);
-        if (debounceTimer) { clearTimeout(debounceTimer); }
-        setAddToPageEnabled(false); 
+        let newConfig = {...qrConfig};
+        newConfig.dataType = event.target.value;
+        const newDataType = dataTypes[event.target.value];
+        if (qrConfig.data === selectedDataType.example) {
+            newConfig.data = newDataType.example;
+        }
+        setQrConfigAndUpdate(newConfig);
     }
     function transparentChanged(event) {
-        setTransparent(event.target.checked ? "yes": "no");
-        if (debounceTimer) { clearTimeout(debounceTimer); }
-        setAddToPageEnabled(false); 
+        setQrConfigAndUpdate({...qrConfig, transparent: event.target.checked ? "yes": "no" });
     }
     function sizeChanged(event) {
-        setSize(event.target.value);
-        if (debounceTimer) { clearTimeout(debounceTimer); }
-        setAddToPageEnabled(false); 
+        setQrConfigAndUpdate({...qrConfig, size: event.target.value});
+    }
+    function colorChanged(color) {
+        setQrConfigAndUpdate({...qrConfig, color});
+    }
+    function backgroundColorChanged(color) {
+        setQrConfigAndUpdate({...qrConfig, backgroundColor: color});
     }
 
     return (
-        // Please note that the below "<Theme>" component does not react to theme changes in Express.
-        // You may use "addOnUISdk.app.ui.theme" to get the current theme and react accordingly.
-        <Theme theme="express" scale="medium" color="light">
+        <AdaptiveTheme>
             <div className="container">
-                <WC onChange={dataTypeChanged}>
-                    <FieldLabel size="l" for="rdoDataType">Type:</FieldLabel>
-                    <RadioGroup vertical selected={dataType} id="rdoDataType">
-                        <Radio value="url">Website Address (URL)</Radio>
-                        <Radio value="text">Text</Radio>
-                    </RadioGroup>
-                </WC>
-                <WC onInput={dataChanged}>
-                    {/*<FieldLabel for="txtData" size="l">QR Code Data:</FieldLabel>*/}
-                    {/* pattern from https://urlregex.com/index.html */}
-                    <Textfield label="QR Code Data" rows={4} type={dataType} 
-                               valid={isDataValid()  ? true : undefined} 
-                               invalid={isDataValid()  ? undefined : true} 
-                               id="txtData" maxlength={1024} required multiline value={data} 
-                               placeholder="Web address or other data for your QR Code">
-                        <HelpText slot="help-text">1024 characters max.</HelpText>
-                        <HelpText slot="negative-help-text">{dataType==="url" ?
-                            `Invalid web address. Be sure to start your web address with "https://" or "http://".` :
-                            "Some data is required before a QR Code can be generated."}</HelpText>
-                    </Textfield>
-                </WC>
-                <div className="preview" ref={previewRef} style={{visibility: addToPageEnabled ? "visible" : "hidden"}}/>
-                <WC onChange={sizeChanged}>
-                    <FieldLabel for="txtSize" size="l">Size (pixels)</FieldLabel>
-                    <NumberField id="txtSize" min={0} max={8000} value={size}
-                            hideStepper
-                               valid={size>32  ? true : undefined} 
-                               invalid={size>32  ? undefined : true} >
-                        <HelpText slot="negative-help-text">Size must be between 33 and 8,000.</HelpText>
-                    </NumberField>
-                </WC>
-                <WC onChange={marginChanged}>
-                    <FieldLabel for="txtMargin" size="l">Margin Width %</FieldLabel>
-                    <NumberField id="txtMargin" min={0} max={25} value={marginWidth}
-                            hideStepper
-                               valid={marginWidth>0 ? true : undefined} 
-                               invalid={marginWidth>0 ? undefined : true} >
-                        <HelpText slot="negative-help-text">Margin must be between 0 and 25.</HelpText>
-                    </NumberField>
-                </WC>
-                <WC onChange={transparentChanged}>
-                    <Checkbox checked={transparent==="yes" ? true : undefined} >Transparent?</Checkbox>
-                </WC>
-                <div className="spacer"></div>
-                <Accordion>
-                    <AccordionItem label="Acknowledgements">
-                        <p className="acknowledgements">
-                            Made possible with the open source component <Link target="_blank" href="https://www.npmjs.com/package/nvp-qr-code-styling">nvp-qr-code-styling</Link>. &copy; 2021 Denys Kozak
-                        </p>
-                        <p className="acknowledgements">
-                            Thanks to Shannon McCready for the wonderful add-on icon and marketing images.
-                        </p>
-                        <p className="acknowledgements">
-                            URL validation using <Link target="_blank" href="https://urlregex.com/index.html">The Perfect URL Regular Expression</Link>.
-                        </p>
-                    </AccordionItem>
-                </Accordion>
-                <div className="bottom-spacer"></div>
+                <div className="preview-section">
+                    <div className="preview opacity-checkerboard" ref={previewRef} style={{filter: addToPageEnabled ? "blur(0)" : "blur(6px)"}}/>
+                </div>
+                <div className="settings-section">
+                    <WC onChange={dataTypeChanged} className="wide-field">
+                            <FieldLabel size="l" for="mnuDataType" sideAligned="start">Kind</FieldLabel>
+                            <Picker id="mnuDataType" value={qrConfig.dataType}>
+                                {dataTypeKeys.map(key => {
+                                    const {label} = dataTypes[key]
+                                    return <MenuItem key={key} value={key}>{label}</MenuItem>
+                                })}
+                            </Picker>
+                    </WC>
+                    <WC onInput={dataChanged}>
+                        {/*<FieldLabel for="txtData" size="l">QR Code Data:</FieldLabel>*/}
+                        {/* pattern from https://urlregex.com/index.html */}
+                        <Textfield label="QR Code Data" rows={4} 
+                                valid={isDataValid()  ? true : undefined} 
+                                invalid={isDataValid()  ? undefined : true} 
+                                id="txtData" maxlength={1024} required multiline value={qrConfig.data} 
+                                placeholder={selectedDataType.placeholder}>
+                            <HelpText slot="help-text">1024 characters max.</HelpText>
+                            <HelpText slot="negative-help-text">{selectedDataType.invalidReason(qrConfig.data)}</HelpText>
+                        </Textfield>
+                    </WC>
+                    <div className="wide-field">
+                        <FieldLabel size="l" for="clrDotColor" sideAligned="start">Color</FieldLabel>
+                        <ColorPicker id="clrDotColor" color={qrConfig.color} onInput={colorChanged}/>
+                    </div>
+                    <div className="wide-field">
+                        <FieldLabel size="l" for="clrBackgroundColor" sideAligned="start">Background</FieldLabel>
+                        <ColorPicker id="clrBackgroundColor" color={qrConfig.backgroundColor} onInput={backgroundColorChanged} />
+                    </div>
+                    <WC onInput={sizeChanged} className="wide-field">
+                        <FieldLabel for="txtSize" size="l" sideAligned="start">Size (pixels)</FieldLabel>
+                        <NumberField id="txtSize" min={0} max={8000} value={qrConfig.size}
+                                hideStepper
+                                valid={qrConfig.size>32  ? true : undefined} 
+                                invalid={qrConfig.size>32  ? undefined : true} >
+                            <HelpText slot="negative-help-text">Size must be between 33 and 8,000.</HelpText>
+                        </NumberField>
+                    </WC>
+                    <WC onInput={marginChanged} className="wide-field">
+                        <FieldLabel for="txtMargin" size="l" sideAligned="start">Margin Width %</FieldLabel>
+                        <NumberField id="txtMargin" min={0} max={25} value={qrConfig.marginWidth}
+                                hideStepper
+                                valid={qrConfig.marginWidth>=0 ? true : undefined} 
+                                invalid={qrConfig.marginWidth>=0 ? undefined : true} >
+                            <HelpText slot="negative-help-text">Margin must be between 0 and 25.</HelpText>
+                        </NumberField>
+                    </WC>
+                    <div className="spacer"></div>
+                    <Accordion>
+                        <AccordionItem label="Acknowledgements">
+                            <p className="acknowledgements">
+                                Made possible with the following open source components:
+                                <ul>
+                                    <li><Link target="_blank" href="https://www.npmjs.com/package/nvp-qr-code-styling">nvp-qr-code-styling</Link> &copy; 2021 Denys Kozak</li>
+                                    <li><Link target="_blank" href="https://www.npmjs.com/package/@react-hook/debounce">debounce</Link> &copy; 2019 Jared Lunde </li>
+                                    <li><Link target="_blank" href="https://opensource.adobe.com/spectrum-web-components/">Spectrum Web Components</Link> &copy; 2023 Adobe</li>
+                                    <li><Link target="_blank" href="https://react.dev">React</Link> &copy; Meta Platforms, Inc. and affiliates.</li>
+                                </ul>
+                            </p>
+                            <p className="acknowledgements">
+                                Thanks to Shannon McCready for the wonderful add-on icon and marketing images.
+                            </p>
+                        </AccordionItem>
+                    </Accordion>
+                    <div className="bottom-spacer"></div>
+                </div>
+                <div className="bottom-section">
+                    <Button size="m" onClick={handleClick} disabled={!addToPageEnabled}>Add to page</Button>
+                </div>
             </div>
-            <div className="bottom">
-                <Button size="m" onClick={handleClick} disabled={!addToPageEnabled}>Add to page</Button>
-            </div>
-        </Theme>
+        </AdaptiveTheme>
     );
 };
 
