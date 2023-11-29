@@ -2,11 +2,18 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./components/App";
 
-import addOnUISdk from "https://new.express.adobe.com/static/add-on-sdk/sdk.js";
+import addOnUiSdk from "https://new.express.adobe.com/static/add-on-sdk/sdk.js";
+import { AddOnUiSdkContext } from "./contexts/AddOnUiSdkContext";
 
-addOnUISdk.ready.then(() => {
-    console.log("addOnUISdk is ready for use.");
-
+console.log("before ready");
+addOnUiSdk.ready.then(() => {
+    console.log("After ready");
     const root = createRoot(document.getElementById("root"));
-    root.render(<App addOnUISdk={addOnUISdk} />);
+    console.log("beforfe render");
+    root.render(
+        <AddOnUiSdkContext.Provider value={addOnUiSdk}>
+            <App />
+        </AddOnUiSdkContext.Provider>
+    );
+    console.log("after render");
 });
