@@ -1,0 +1,17 @@
+.color-swatch-picker {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+}
+
+.color-swatch-picker sp-watch {
+    z-index: 99;
+}
+
+.color-swatch-picker input {
+    opacity: 0;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    inline-size: 32px;
+}
